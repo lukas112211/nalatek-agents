@@ -1,0 +1,30 @@
+name: Agent Pemasaran - Analisis Pasar
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # Jam 08:00 WIB (01:00 UTC) setiap hari
+  workflow_dispatch:       # Bisa dijalankan manual juga
+
+jobs:
+  analisis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r agents/pemasaran/requirements.txt
+
+      - name: Jalankan analisis pasar
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+        run: python agents/pemasaran/analisis_pasar.py
