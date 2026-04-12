@@ -1,40 +1,37 @@
-
-Salin
-
 import os
 import asyncio
 import httpx
 from datetime import datetime, timezone
- 
+
 SUPABASE_URL  = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY  = os.getenv("SUPABASE_KEY", "")
 BOT_TOKEN     = os.getenv("BOT_TOKEN", "")
 CHAT_ID       = os.getenv("CHAT_ID", "")
 GEMINI_KEY    = os.getenv("GEMINI_KEY", "")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "300"))
- 
+
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json"
 }
- 
+
 async def sb_get(client, table, params=None):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     r = await client.get(url, headers=HEADERS, params=params or {})
     return r.json() if r.status_code == 200 else []
- 
+
 async def sb_insert(client, table, data):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     r = await client.post(url, headers={**HEADERS, "Prefer": "return=minimal"}, json=data)
     return r.status_code in (200, 201)
- 
+
 async def sb_update(client, table, match, data):
     params = {k: f"eq.{v}" for k, v in match.items()}
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     r = await client.patch(url, headers={**HEADERS, "Prefer": "return=minimal"}, params=params, json=data)
     return r.status_code in (200, 204)
- 
+
 async def tg_send(client, text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     r = await client.post(url, json={
@@ -45,7 +42,7 @@ async def tg_send(client, text):
     print(f"[TG] ok={result.get('ok')} | {text[:60]}")
     if not result.get("ok"):
         print(f"[TG ERROR] {result}")
- 
+
 async def ask_gemini(client, prompt):
     if not GEMINI_KEY:
         return "[AI tidak aktif]"
@@ -57,7 +54,7 @@ async def ask_gemini(client, prompt):
         return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
         return f"[Error AI: {e}]"
- 
+
 async def log_action(client, agent, action, status, details=None, error=None):
     try:
         await sb_insert(client, "agent_logs", {
@@ -69,7 +66,7 @@ async def log_action(client, agent, action, status, details=None, error=None):
         })
     except Exception as e:
         print(f"[LOG ERROR] {e}")
- 
+
 async def process_messages(client):
     msgs = await sb_get(client, "agent_messages", {
         "to_agent": "eq.asisten",
@@ -95,7 +92,7 @@ async def process_messages(client):
         )
         await tg_send(client, text)
         await log_action(client, "asisten", f"proses_pesan_{from_agent}", "success")
- 
+
 async def check_completed_tasks(client):
     tasks = await sb_get(client, "agent_tasks", {
         "status": "eq.done",
@@ -112,7 +109,7 @@ async def check_completed_tasks(client):
         )
         await tg_send(client, text)
         await sb_update(client, "agent_tasks", {"id": task["id"]}, {"status": "reported"})
- 
+
 async def daily_report(client):
     now = datetime.now(timezone.utc)
     if now.hour != 8:
@@ -134,14 +131,14 @@ async def daily_report(client):
     )
     await tg_send(client, text)
     await log_action(client, "asisten", "laporan_harian", "success")
- 
+
 async def main():
     print("Nalatek Asisten AI mulai berjalan...")
     print(f"SUPABASE_URL  : {SUPABASE_URL[:30]}...")
     print(f"SUPABASE_KEY  : {SUPABASE_KEY[:20]}...")
     print(f"BOT_TOKEN     : {BOT_TOKEN[:20]}...")
     print(f"CHAT_ID       : {CHAT_ID}")
- 
+
     async with httpx.AsyncClient(timeout=20) as client:
         await tg_send(client, (
             "Nalatek Asisten AI aktif!\n"
@@ -149,7 +146,7 @@ async def main():
             f"Polling setiap {POLL_INTERVAL} detik."
         ))
         await log_action(client, "asisten", "startup", "success")
- 
+
         loop_count = 0
         while True:
             try:
@@ -162,12 +159,6 @@ async def main():
                 err = str(e)
                 print(f"[ERROR] {err}")
                 await log_action(client, "asisten", "loop_error", "error", error=err)
-            await asyncio.sleep(POLL_INTERVAL)
- 
-if __name__ == "__main__":
-    asyncio.run(main())
- 
-
             await asyncio.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
