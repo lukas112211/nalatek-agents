@@ -38,38 +38,36 @@ async def ask_ai(client, prompt):
     headers = {
         "Authorization": f"Bearer {GEMINI_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://localhost", # Tambahkan ini
-        "X-Title": "Nalatek Market Bot"       # Tambahkan ini
+        "HTTP-Referer": "https://nalatek.id", # Wajib ada untuk OpenRouter Free
+        "X-Title": "Nalatek Marketing Bot"
     }
     body = {
-        "model": "google/gemini-flash-1.5-8b:free",
+        "model": "google/gemini-flash-1.5-8b:free", # Ganti ke model yang lebih stabil
         "messages": [{"role": "user", "content": prompt}]
     }
+    
     try:
-        r = await client.post(url, headers=headers, json=body, timeout=40)
+        # Tambahkan follow_redirects=True
+        r = await client.post(url, headers=headers, json=body, timeout=60, follow_redirects=True)
         
-        # Cek jika status bukan 200 (OK)
+        # Cek status code sebelum .json()
         if r.status_code != 200:
-            return f"AI Error: Server returned status {r.status_code} - {r.text}"
-            
+            return f"AI Error: Server OpenRouter sibuk (Status {r.status_code})"
+
+        # Cek apakah isinya kosong
+        if not r.text.strip():
+            return "AI Error: Server mengirim respon kosong. Coba lagi nanti."
+
         data = r.json()
-        if "choices" in data:
-            return data["choices"][0]["message"]["content"]
-        return f"AI error: {data.get('error', {}).get('message', 'Unknown error')}"
-    except Exception as e:
-        return f"Error memanggil AI: {str(e)}"
-    try:
-        r = await client.post(url, headers=headers, json=body, timeout=30)
-        data = r.json()
-        print(f"[AI RAW] {str(data)[:200]}")
-        if "choices" in data:
+        if "choices" in data and len(data["choices"]) > 0:
             return data["choices"][0]["message"]["content"]
         elif "error" in data:
-            return f"AI error: {data['error'].get('message', str(data['error']))}"
+            return f"AI Error Detail: {data['error'].get('message', 'Unknown error')}"
         else:
-            return f"Response tidak dikenal: {str(data)[:100]}"
+            return f"AI Error: Format respon tidak dikenal."
+            
     except Exception as e:
-        return f"Error memanggil AI: {str(e)}"
+        return f"Error Koneksi AI: {str(e)}"
 
 def get_trends():
     results = {}
