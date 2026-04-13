@@ -37,13 +37,27 @@ async def ask_ai(client, prompt):
     url = "https://openrouter.ai"
     headers = {
         "Authorization": f"Bearer {GEMINI_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://localhost", # Tambahkan ini
+        "X-Title": "Nalatek Market Bot"       # Tambahkan ini
     }
     body = {
-        # GANTI BAGIAN INI SAJA
         "model": "google/gemini-flash-1.5-8b:free",
         "messages": [{"role": "user", "content": prompt}]
     }
+    try:
+        r = await client.post(url, headers=headers, json=body, timeout=40)
+        
+        # Cek jika status bukan 200 (OK)
+        if r.status_code != 200:
+            return f"AI Error: Server returned status {r.status_code} - {r.text}"
+            
+        data = r.json()
+        if "choices" in data:
+            return data["choices"][0]["message"]["content"]
+        return f"AI error: {data.get('error', {}).get('message', 'Unknown error')}"
+    except Exception as e:
+        return f"Error memanggil AI: {str(e)}"
     try:
         r = await client.post(url, headers=headers, json=body, timeout=30)
         data = r.json()
