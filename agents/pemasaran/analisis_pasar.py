@@ -34,13 +34,14 @@ async def sb_insert(client, table, data):
     return r.status_code in (200, 201)
 
 async def ask_ai(client, prompt):
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = "https://openrouter.ai"
     headers = {
         "Authorization": f"Bearer {GEMINI_KEY}",
         "Content-Type": "application/json"
     }
     body = {
-        "model": "google/gemini-pro-1.5:free",
+        # GANTI BAGIAN INI SAJA
+        "model": "google/gemini-flash-1.5-8b:free",
         "messages": [{"role": "user", "content": prompt}]
     }
     try:
