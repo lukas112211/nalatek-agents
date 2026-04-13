@@ -9,9 +9,9 @@ BOT_TOKEN    = os.environ["BOT_TOKEN"]
 CHAT_ID      = os.environ["CHAT_ID"]
 GEMINI_KEY   = os.environ["GEMINI_KEY"]
 
-HEADERS = {
+SUPABASE_HEADERS = {
     "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {GEMINI_KEY}"
+    "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json"
 }
 
@@ -30,28 +30,31 @@ async def tg_send(client, text):
 
 async def sb_insert(client, table, data):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
-    r = await client.post(url, headers={**HEADERS, "Prefer": "return=minimal"}, json=data)
+    r = await client.post(url, headers={**SUPABASE_HEADERS, "Prefer": "return=minimal"}, json=data)
     return r.status_code in (200, 201)
 
-async def ask_gemini(client, prompt):
+async def ask_ai(client, prompt):
     url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GEMINI_KEY}",
+        "Content-Type": "application/json"
+    }
     body = {
         "model": "meta-llama/llama-3.1-8b-instruct:free",
         "messages": [{"role": "user", "content": prompt}]
     }
     try:
-        r = await client.post(url, json=body, timeout=30)
+        r = await client.post(url, headers=headers, json=body, timeout=30)
         data = r.json()
-        print(f"[GEMINI RAW] {str(data)[:200]}")
-        # Coba ambil text dari berbagai kemungkinan struktur response
-        if "candidates" in data:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+        print(f"[AI RAW] {str(data)[:200]}")
+        if "choices" in data:
+            return data["choices"][0]["message"]["content"]
         elif "error" in data:
-            return f"Gemini error: {data['error'].get('message', 'unknown')}"
+            return f"AI error: {data['error'].get('message', str(data['error']))}"
         else:
             return f"Response tidak dikenal: {str(data)[:100]}"
     except Exception as e:
-        return f"Error memanggil Gemini: {str(e)}"
+        return f"Error memanggil AI: {str(e)}"
 
 def get_trends():
     results = {}
@@ -66,7 +69,6 @@ def get_trends():
                     results[kw] = int(df[kw].mean())
     except Exception as e:
         print(f"[TRENDS ERROR] {e}")
-    # Kalau gagal atau kosong, isi default 0
     for kw in KEYWORDS:
         if kw not in results:
             results[kw] = 0
@@ -76,12 +78,10 @@ async def main():
     print("[AGENT PEMASARAN] Mulai analisis pasar...")
     async with httpx.AsyncClient(timeout=30) as client:
 
-        # 1. Ambil data tren
         print("[TRENDS] Mengambil data Google Trends...")
         trends = get_trends()
         print(f"[TRENDS] {trends}")
 
-        # 2. Simpan ke Supabase
         now = datetime.now(timezone.utc).isoformat()
         for kw, score in trends.items():
             ok = await sb_insert(client, "market_insights", {
@@ -93,29 +93,26 @@ async def main():
             })
             print(f"[DB] Insert {kw}: {ok}")
 
-        # 3. Analisis Gemini
         top = sorted(trends.items(), key=lambda x: x[1], reverse=True)
         top_str = "\n".join([f"- {k}: skor {v}/100" for k, v in top])
         top_keyword = top[0][0] if top else "-"
         top_score = top[0][1] if top else 0
 
-        prompt = f"""Kamu adalah analis pemasaran digital untuk bisnis jasa web development bernama Nalatek di Indonesia.
+        prompt = (
+            "Kamu adalah analis pemasaran digital untuk bisnis jasa web development "
+            "bernama Nalatek di Indonesia.\n\n"
+            f"Data tren pencarian Google 7 hari terakhir:\n{top_str}\n\n"
+            "Berikan analisis singkat (maksimal 150 kata) dalam Bahasa Indonesia:\n"
+            "1. Keyword paling potensial untuk ditarget sekarang\n"
+            "2. Satu ide konten TikTok atau Instagram untuk minggu ini\n"
+            "3. Satu saran strategi pemasaran konkret untuk Nalatek\n\n"
+            "Jawab langsung tanpa intro."
+        )
 
-Data tren pencarian Google 7 hari terakhir:
-{top_str}
+        print("[AI] Meminta analisis...")
+        analisis = await ask_ai(client, prompt)
+        print(f"[AI] {analisis[:150]}")
 
-Berikan analisis singkat (maksimal 150 kata) dalam Bahasa Indonesia:
-1. Keyword paling potensial untuk ditarget sekarang
-2. Satu ide konten TikTok atau Instagram untuk minggu ini
-3. Satu saran strategi pemasaran konkret untuk Nalatek
-
-Jawab langsung tanpa intro."""
-
-        print("[GEMINI] Meminta analisis...")
-        analisis = await ask_gemini(client, prompt)
-        print(f"[GEMINI] {analisis[:150]}")
-
-        # 4. Kirim ke Telegram
         pesan = (
             f"Laporan Analisis Pasar Nalatek\n"
             f"{datetime.now().strftime('%d %b %Y')}\n\n"
@@ -125,7 +122,6 @@ Jawab langsung tanpa intro."""
         )
         await tg_send(client, pesan)
 
-        # 5. Log
         await sb_insert(client, "agent_logs", {
             "agent_name": "pemasaran_analisis",
             "action": "analisis_pasar_harian",
@@ -133,7 +129,6 @@ Jawab langsung tanpa intro."""
             "details": {"keywords_tracked": len(trends), "top_keyword": top_keyword}
         })
 
-        # 6. Kirim ke asisten
         await sb_insert(client, "agent_messages", {
             "from_agent": "pemasaran",
             "to_agent": "asisten",
