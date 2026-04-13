@@ -11,7 +11,7 @@ GEMINI_KEY   = os.environ["GEMINI_KEY"]
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Authorization": f"Bearer {GEMINI_KEY}"
     "Content-Type": "application/json"
 }
 
@@ -34,8 +34,11 @@ async def sb_insert(client, table, data):
     return r.status_code in (200, 201)
 
 async def ask_gemini(client, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    body = {
+        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "messages": [{"role": "user", "content": prompt}]
+    }
     try:
         r = await client.post(url, json=body, timeout=30)
         data = r.json()
