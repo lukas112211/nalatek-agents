@@ -34,7 +34,7 @@ async def sb_insert(client, table, data):
     return r.status_code in (200, 201)
 
 async def ask_gemini(client, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={GEMINI_KEY}"
     body = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         r = await client.post(url, json=body, timeout=30)
