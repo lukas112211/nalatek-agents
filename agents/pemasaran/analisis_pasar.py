@@ -40,7 +40,7 @@ async def ask_ai(client, prompt):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "meta-llama/llama-3-8b-instruct",
+        "model": "meta-llama/llama-3-8b-instruct:free",
         "messages": [{"role": "user", "content": prompt}]
     }
     try:
