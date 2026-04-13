@@ -1,9 +1,7 @@
 import os
 import httpx
 import asyncio
-import json
 from datetime import datetime, timezone
-from pytrends.request import TrendReq
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -27,8 +25,8 @@ KEYWORDS = [
 
 async def tg_send(client, text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    await client.post(url, json={"chat_id": CHAT_ID, "text": text})
-    print(f"[TG] {text[:60]}")
+    r = await client.post(url, json={"chat_id": CHAT_ID, "text": text})
+    print(f"[TG] ok={r.json().get('ok')} | {text[:60]}")
 
 async def sb_insert(client, table, data):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
@@ -36,15 +34,26 @@ async def sb_insert(client, table, data):
     return r.status_code in (200, 201)
 
 async def ask_gemini(client, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
     body = {"contents": [{"parts": [{"text": prompt}]}]}
-    r = await client.post(url, json=body, timeout=30)
-    data = r.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+    try:
+        r = await client.post(url, json=body, timeout=30)
+        data = r.json()
+        print(f"[GEMINI RAW] {str(data)[:200]}")
+        # Coba ambil text dari berbagai kemungkinan struktur response
+        if "candidates" in data:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        elif "error" in data:
+            return f"Gemini error: {data['error'].get('message', 'unknown')}"
+        else:
+            return f"Response tidak dikenal: {str(data)[:100]}"
+    except Exception as e:
+        return f"Error memanggil Gemini: {str(e)}"
 
 def get_trends():
     results = {}
     try:
+        from pytrends.request import TrendReq
         pytrends = TrendReq(hl="id-ID", tz=420)
         pytrends.build_payload(KEYWORDS[:5], cat=0, timeframe="now 7-d", geo="ID")
         df = pytrends.interest_over_time()
@@ -54,7 +63,9 @@ def get_trends():
                     results[kw] = int(df[kw].mean())
     except Exception as e:
         print(f"[TRENDS ERROR] {e}")
-        for kw in KEYWORDS:
+    # Kalau gagal atau kosong, isi default 0
+    for kw in KEYWORDS:
+        if kw not in results:
             results[kw] = 0
     return results
 
@@ -70,60 +81,62 @@ async def main():
         # 2. Simpan ke Supabase
         now = datetime.now(timezone.utc).isoformat()
         for kw, score in trends.items():
-            await sb_insert(client, "market_insights", {
+            ok = await sb_insert(client, "market_insights", {
                 "keyword": kw,
                 "platform": "google_trends",
                 "insight_data": {"score_7d": score, "region": "ID"},
                 "score": score,
                 "created_at": now
             })
+            print(f"[DB] Insert {kw}: {ok}")
 
-        # 3. Minta analisis dari Gemini
+        # 3. Analisis Gemini
         top = sorted(trends.items(), key=lambda x: x[1], reverse=True)
         top_str = "\n".join([f"- {k}: skor {v}/100" for k, v in top])
+        top_keyword = top[0][0] if top else "-"
+        top_score = top[0][1] if top else 0
 
         prompt = f"""Kamu adalah analis pemasaran digital untuk bisnis jasa web development bernama Nalatek di Indonesia.
 
-Berikut data tren pencarian Google 7 hari terakhir untuk keyword jasa web:
+Data tren pencarian Google 7 hari terakhir:
 {top_str}
 
 Berikan analisis singkat (maksimal 150 kata) dalam Bahasa Indonesia:
-1. Keyword mana yang paling potensial untuk ditarget sekarang
-2. Satu rekomendasi konten TikTok/Instagram yang bisa dibuat minggu ini
+1. Keyword paling potensial untuk ditarget sekarang
+2. Satu ide konten TikTok atau Instagram untuk minggu ini
 3. Satu saran strategi pemasaran konkret untuk Nalatek
 
-Jawab langsung tanpa intro panjang."""
+Jawab langsung tanpa intro."""
 
         print("[GEMINI] Meminta analisis...")
         analisis = await ask_gemini(client, prompt)
-        print(f"[GEMINI] {analisis[:100]}")
+        print(f"[GEMINI] {analisis[:150]}")
 
         # 4. Kirim ke Telegram
-        top_keyword = top[0][0] if top else "-"
         pesan = (
             f"Laporan Analisis Pasar Nalatek\n"
             f"{datetime.now().strftime('%d %b %Y')}\n\n"
-            f"Keyword teratas: {top_keyword}\n\n"
+            f"Keyword teratas: {top_keyword} (skor {top_score})\n\n"
             f"Analisis AI:\n{analisis}\n\n"
-            f"Data lengkap tersimpan di Supabase."
+            f"Data tersimpan di Supabase."
         )
         await tg_send(client, pesan)
 
-        # 5. Log ke Supabase
+        # 5. Log
         await sb_insert(client, "agent_logs", {
             "agent_name": "pemasaran_analisis",
             "action": "analisis_pasar_harian",
             "status": "success",
-            "details": {"keywords_tracked": len(trends), "top_keyword": top_keyword},
+            "details": {"keywords_tracked": len(trends), "top_keyword": top_keyword}
         })
 
-        # 6. Kirim pesan ke asisten
+        # 6. Kirim ke asisten
         await sb_insert(client, "agent_messages", {
             "from_agent": "pemasaran",
             "to_agent": "asisten",
             "message_type": "result",
             "content": {
-                "text": f"Analisis pasar selesai. Top keyword: {top_keyword} (skor {top[0][1] if top else 0})",
+                "text": f"Analisis pasar selesai. Top keyword: {top_keyword} (skor {top_score})",
                 "top_trends": dict(top[:3])
             },
             "status": "pending"
