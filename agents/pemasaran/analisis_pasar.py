@@ -40,7 +40,7 @@ async def ask_ai(client, prompt):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "meta-llama/llama-3.2-1b-instruct:free",
+        "model": "google/gemini-flash-1.5-8b:free",
         "messages": [{"role": "user", "content": prompt}]
     }
     try:
