@@ -34,40 +34,41 @@ async def sb_insert(client, table, data):
     return r.status_code in (200, 201)
 
 async def ask_ai(client, prompt):
-    url = "https://openrouter.ai"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GEMINI_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://nalatek.id", # Wajib ada untuk OpenRouter Free
-        "X-Title": "Nalatek Marketing Bot"
+        "HTTP-Referer": "https://nalatek.gt.tc",
+        "X-Title": "Nalatek Agent"
     }
-    body = {
-        "model": "google/gemini-flash-1.5-8b:free", # Ganti ke model yang lebih stabil
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    
-    try:
-        # Tambahkan follow_redirects=True
-        r = await client.post(url, headers=headers, json=body, timeout=60, follow_redirects=True)
-        
-        # Cek status code sebelum .json()
-        if r.status_code != 200:
-            return f"AI Error: Server OpenRouter sibuk (Status {r.status_code})"
-
-        # Cek apakah isinya kosong
-        if not r.text.strip():
-            return "AI Error: Server mengirim respon kosong. Coba lagi nanti."
-
-        data = r.json()
-        if "choices" in data and len(data["choices"]) > 0:
-            return data["choices"][0]["message"]["content"]
-        elif "error" in data:
-            return f"AI Error Detail: {data['error'].get('message', 'Unknown error')}"
-        else:
-            return f"AI Error: Format respon tidak dikenal."
-            
-    except Exception as e:
-        return f"Error Koneksi AI: {str(e)}"
+    # Coba model satu per satu sampai berhasil
+    models = [
+        "mistralai/mistral-7b-instruct:free",
+        "microsoft/phi-3-mini-128k-instruct:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free"
+    ]
+    for model in models:
+        try:
+            body = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            print(f"[AI] Mencoba model: {model}")
+            r = await client.post(url, headers=headers, json=body, timeout=60)
+            print(f"[AI] Status: {r.status_code}")
+            if r.status_code != 200:
+                print(f"[AI] Error: {r.text[:100]}")
+                continue
+            data = r.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
+            elif "error" in data:
+                print(f"[AI] Model error: {data['error'].get('message','')}")
+                continue
+        except Exception as e:
+            print(f"[AI] Exception: {str(e)}")
+            continue
+    return "AI tidak tersedia saat ini. Data tren sudah tersimpan di Supabase."
 
 def get_trends():
     results = {}
@@ -89,7 +90,7 @@ def get_trends():
 
 async def main():
     print("[AGENT PEMASARAN] Mulai analisis pasar...")
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
 
         print("[TRENDS] Mengambil data Google Trends...")
         trends = get_trends()
@@ -115,7 +116,7 @@ async def main():
             "Kamu adalah analis pemasaran digital untuk bisnis jasa web development "
             "bernama Nalatek di Indonesia.\n\n"
             f"Data tren pencarian Google 7 hari terakhir:\n{top_str}\n\n"
-            "Berikan analisis singkat (maksimal 150 kata) dalam Bahasa Indonesia:\n"
+            "Berikan analisis singkat maksimal 150 kata dalam Bahasa Indonesia:\n"
             "1. Keyword paling potensial untuk ditarget sekarang\n"
             "2. Satu ide konten TikTok atau Instagram untuk minggu ini\n"
             "3. Satu saran strategi pemasaran konkret untuk Nalatek\n\n"
@@ -124,7 +125,7 @@ async def main():
 
         print("[AI] Meminta analisis...")
         analisis = await ask_ai(client, prompt)
-        print(f"[AI] {analisis[:150]}")
+        print(f"[AI HASIL] {analisis[:150]}")
 
         pesan = (
             f"Laporan Analisis Pasar Nalatek\n"
