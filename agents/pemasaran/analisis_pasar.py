@@ -45,7 +45,7 @@ async def ask_ai(client, prompt):
     models = [
         "mistralai/mistral-7b-instruct:free",
         "microsoft/phi-3-mini-128k-instruct:free",
-        "nousresearch/hermes-3-llama-3.1-405b:free"
+        "google/gemma-4-26b-a4b-it:free"
     ]
     for model in models:
         try:
