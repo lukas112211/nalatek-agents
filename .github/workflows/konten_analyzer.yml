@@ -1,0 +1,29 @@
+name: Agent Konten Analyzer
+
+on:
+  schedule:
+    - cron: '30 2 * * *'   # 09:30 WIB setiap hari
+  workflow_dispatch:
+
+jobs:
+  analisis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install packages
+        run: pip install -r agents/konten_analyzer/requirements.txt
+
+      - name: Jalankan analyzer
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+        run: python agents/konten_analyzer/analyzer.py
